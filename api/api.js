@@ -2,29 +2,23 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
   if (req.method === "OPTIONS") return res.status(200).end();
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const { to, message } = req.body;
-  if (!to || !message) {
-    return res.status(400).json({ error: "Missing 'to' or 'message'" });
-  }
+  if (!to || !message) return res.status(400).json({ error: "Missing 'to' or 'message'" });
 
-  // Format Pakistan number → +923001234567
   let phone = to.replace(/[\s\-\(\)]/g, "");
-  if (phone.startsWith("0092"))      phone = "+92" + phone.slice(4);
+  if (phone.startsWith("0092"))     phone = "+92" + phone.slice(4);
   else if (phone.startsWith("92") && !phone.startsWith("+")) phone = "+" + phone;
-  else if (phone.startsWith("0"))    phone = "+92" + phone.slice(1);
-  else if (!phone.startsWith("+"))   phone = "+92" + phone;
+  else if (phone.startsWith("0"))   phone = "+92" + phone.slice(1);
+  else if (!phone.startsWith("+"))  phone = "+92" + phone;
 
-  console.log("Sending SMS via Infobip to:", phone);
+  console.log("Sending SMS to:", phone);
 
   try {
     const response = await fetch(
-      `https://${process.env.INFOBIP_BASE_URL}/sms/2/text/advanced`,
+      `https://${process.env.INFOBIP_BASE_URL}/sms/3/messages`,  // ← v3 endpoint
       {
         method: "POST",
         headers: {
@@ -35,9 +29,9 @@ export default async function handler(req, res) {
         body: JSON.stringify({
           messages: [
             {
-              from: "MediTrack",
+              sender: "ServiceSMS",   // ← MUST be this on trial, not "MediTrack"
               destinations: [{ to: phone }],
-              text: message,
+              content: { text: message },
             },
           ],
         }),
@@ -49,17 +43,22 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       const errMsg = data?.requestError?.serviceException?.text || "SMS failed";
-      console.error("Infobip error:", errMsg);
       return res.status(500).json({ error: errMsg, raw: data });
     }
 
-    const msgStatus = data?.messages?.[0]?.status?.name;
-    console.log("Message status:", msgStatus);
+    const msg = data?.messages?.[0];
+    const statusName = msg?.status?.name;
+    const statusDesc = msg?.status?.description;
+    console.log("Status:", statusName, "-", statusDesc);
+
+    // Treat PENDING/ACCEPTED as success — delivery happens async
+    const success = ["MESSAGE_ACCEPTED", "PENDING_ENROUTE", "DELIVERED_TO_HANDSET", "DELIVERED_TO_OPERATOR"].includes(statusName);
 
     return res.status(200).json({
-      success: true,
-      status: msgStatus,
-      id: data?.messages?.[0]?.messageId,
+      success,
+      status: statusName,
+      description: statusDesc,
+      id: msg?.messageId,
     });
 
   } catch (err) {
