@@ -59,7 +59,7 @@ export default async function handler(req, res) {
 
     const msg = result.body?.messages?.[0];
     const statusName = msg?.status?.name;
-    const success = ["MESSAGE_ACCEPTED","PENDING_ENROUTE","DELIVERED_TO_HANDSET","DELIVERED_TO_OPERATOR"].includes(statusName);
+    const success = result.status < 400;
 
     return res.status(200).json({ success, status: statusName, id: msg?.messageId, raw: result.body });
 
