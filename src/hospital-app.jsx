@@ -16,36 +16,24 @@ const PATIENTS_KEY = "hms_patients_v3";
 const bloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
 const genders = ["Male", "Female", "Other"];
 const specialties = [
-  // Primary Care
   "General Physician", "Family Medicine", "Internal Medicine",
-  // Surgical
   "General Surgeon", "Cardiothoracic Surgeon", "Neurosurgeon", "Orthopedic Surgeon",
   "Plastic & Reconstructive Surgeon", "Vascular Surgeon", "Pediatric Surgeon", "Urological Surgeon",
-  // Medical Specialties
   "Cardiologist", "Neurologist", "Gastroenterologist", "Endocrinologist", "Nephrologist",
   "Rheumatologist", "Hematologist", "Oncologist", "Pulmonologist", "Infectious Disease Specialist",
   "Immunologist", "Hepatologist", "Diabetologist",
-  // Women's Health
   "Gynecologist", "Obstetrician", "Gynecologist & Obstetrician (OB-GYN)", "Reproductive Endocrinologist",
   "Maternal-Fetal Medicine", "Fertility Specialist", "Breast Surgeon",
-  // Children
   "Pediatrician", "Neonatologist", "Pediatric Cardiologist", "Pediatric Neurologist",
   "Pediatric Oncologist", "Pediatric Endocrinologist", "Child & Adolescent Psychiatrist",
-  // Mental Health
   "Psychiatrist", "Clinical Psychologist", "Neuropsychiatrist", "Addiction Medicine Specialist",
-  // Sensory & Head
   "Ophthalmologist", "ENT Specialist (Otolaryngologist)", "Audiologist", "Maxillofacial Surgeon",
   "Dentist", "Orthodontist", "Oral Surgeon",
-  // Skin, Bones & Joints
   "Dermatologist", "Rheumatologist / Arthritis Specialist", "Orthopedic", "Sports Medicine Specialist",
   "Physiotherapist", "Chiropractor",
-  // Cancer
   "Medical Oncologist", "Radiation Oncologist", "Surgical Oncologist", "Hematologist-Oncologist",
-  // Imaging & Pathology
   "Radiologist", "Interventional Radiologist", "Pathologist", "Nuclear Medicine Specialist",
-  // Emergency & Critical Care
   "Emergency Medicine Specialist", "Critical Care / Intensivist", "Anesthesiologist", "Pain Management Specialist",
-  // Other
   "Geriatrician", "Palliative Care Specialist", "Sleep Medicine Specialist", "Occupational Medicine",
   "Dietitian / Nutritionist", "Other (type below)",
 ];
@@ -68,10 +56,282 @@ const mkSMS = async (to, message) => {
       body: JSON.stringify({ to, message })
     });
     const data = await res.json();
-    return { ...log, status: data.success ? "sent" : "failed", telnyxId: data.id };
-  } catch {
-    return { ...log, status: "failed" };
+    const status = data.success ? `sent (${data.status || "ok"})` : "failed";
+    return { ...log, status, telnyxId: data.id, error: data.error };
+  } catch (e) {
+    return { ...log, status: "failed", error: e.message };
   }
+};
+
+// ─── Print Prescription ───────────────────────────────────────────────────────
+function PrintSlip({ p, rx, dr, hxEntry, onClose }) {
+  const handlePrint = () => window.print();
+
+  const medicines = rx?.medicines || [];
+  const diagnosis = rx?.diagnosis || hxEntry?.diagnosis || "";
+  const complaints = hxEntry?.complaints || rx?.instructions || "";
+  const examination = hxEntry?.examination || "";
+  const plan = hxEntry?.plan || "";
+  const investigations = hxEntry?.examination || "";
+
+  return (
+    <>
+      {/* Print-only styles injected into head */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          #print-slip, #print-slip * { visibility: visible !important; }
+          #print-slip { 
+            position: fixed !important; 
+            inset: 0 !important; 
+            z-index: 99999 !important;
+            background: white !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
+      {/* Modal overlay */}
+      <div style={PS.overlay} className="no-print-bg">
+        <div style={PS.modal}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }} className="no-print">
+            <div style={{ fontSize:16, fontWeight:700, color:"#dce8ef" }}>🖨 Print Preview</div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button style={R.primaryBtn} onClick={handlePrint}>🖨 Print</button>
+              <button style={R.ghostBtn} onClick={onClose}>✕ Close</button>
+            </div>
+          </div>
+
+          {/* THE ACTUAL SLIP */}
+          <div id="print-slip" style={PS.slip}>
+
+            {/* Header */}
+            <div style={PS.header}>
+              <div style={PS.headerLeft}>
+                <div style={PS.hospitalName}>MediTrack</div>
+                <div style={PS.hospitalSub}>Patient Management System</div>
+              </div>
+              <div style={PS.headerRight}>
+                <div style={PS.slipTitle}>PRESCRIPTION SLIP</div>
+                <div style={PS.slipDate}>Date: {fmt(new Date().toISOString())}</div>
+                {rx && <div style={PS.slipId}>Rx ID: {rx.id}</div>}
+              </div>
+            </div>
+
+            <div style={PS.divider} />
+
+            {/* Patient + Doctor Info row */}
+            <div style={PS.infoRow}>
+              {/* Patient Info */}
+              <div style={PS.infoBox}>
+                <div style={PS.infoTitle}>Patient Information</div>
+                <table style={PS.infoTable}>
+                  <tbody>
+                    <tr><td style={PS.infoKey}>Name:</td><td style={PS.infoVal}>{p.name}</td></tr>
+                    <tr><td style={PS.infoKey}>Age / Gender:</td><td style={PS.infoVal}>{p.age} yrs / {p.gender}</td></tr>
+                    <tr><td style={PS.infoKey}>Blood Group:</td><td style={PS.infoVal}>{p.blood}</td></tr>
+                    <tr><td style={PS.infoKey}>Contact:</td><td style={PS.infoVal}>{p.phone}</td></tr>
+                    {p.address && <tr><td style={PS.infoKey}>Address:</td><td style={PS.infoVal}>{p.address}</td></tr>}
+                    {p.allergies && <tr><td style={PS.infoKey}>Allergies:</td><td style={{ ...PS.infoVal, color:"#c0392b" }}>{p.allergies}</td></tr>}
+                    <tr><td style={PS.infoKey}>Patient ID:</td><td style={{ ...PS.infoVal, fontFamily:"monospace", fontWeight:700 }}>{p.id}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Doctor Info */}
+              {dr && (
+                <div style={{ ...PS.infoBox, borderLeft:"1px solid #ddd", paddingLeft:16 }}>
+                  <div style={PS.infoTitle}>Doctor Information</div>
+                  <table style={PS.infoTable}>
+                    <tbody>
+                      <tr><td style={PS.infoKey}>Name:</td><td style={{ ...PS.infoVal, fontWeight:700 }}>{dr.name}</td></tr>
+                      <tr><td style={PS.infoKey}>Specialty:</td><td style={PS.infoVal}>{dr.specialty}</td></tr>
+                      {dr.department && <tr><td style={PS.infoKey}>Department:</td><td style={PS.infoVal}>{dr.department}</td></tr>}
+                      {dr.hospital && <tr><td style={PS.infoKey}>Hospital:</td><td style={PS.infoVal}>{dr.hospital}</td></tr>}
+                      {dr.licenseNo && <tr><td style={PS.infoKey}>PMDC No:</td><td style={PS.infoVal}>{dr.licenseNo}</td></tr>}
+                      {dr.phone && <tr><td style={PS.infoKey}>Contact:</td><td style={PS.infoVal}>{dr.phone}</td></tr>}
+                      {dr.experience && <tr><td style={PS.infoKey}>Experience:</td><td style={PS.infoVal}>{dr.experience}</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div style={PS.divider} />
+
+            {/* Two Column: Left = Clinical, Right = Rx */}
+            <div style={PS.bodyRow}>
+
+              {/* Left column */}
+              <div style={PS.leftCol}>
+                {/* Chief Complaints */}
+                {complaints && (
+                  <div style={PS.section}>
+                    <div style={PS.sectionTitle}>Chief Complaints</div>
+                    <div style={PS.sectionBody}>{complaints}</div>
+                  </div>
+                )}
+
+                {/* Adv. Investigations */}
+                {(examination || investigations) && (
+                  <div style={PS.section}>
+                    <div style={PS.sectionTitle}>Adv. Investigations / Examination</div>
+                    <div style={PS.sectionBody}>{examination || investigations}</div>
+                  </div>
+                )}
+
+                {/* Diagnosis */}
+                {diagnosis && (
+                  <div style={PS.section}>
+                    <div style={PS.sectionTitle}>Diagnosis</div>
+                    <div style={{ ...PS.sectionBody, fontWeight:700 }}>{diagnosis}</div>
+                  </div>
+                )}
+
+                {/* Management Plan */}
+                {plan && (
+                  <div style={PS.section}>
+                    <div style={PS.sectionTitle}>Management Plan</div>
+                    <div style={PS.sectionBody}>{plan}</div>
+                  </div>
+                )}
+
+                {/* Vitals box if no data */}
+                {!complaints && !examination && !diagnosis && (
+                  <div style={PS.vitalsBox}>
+                    <div style={PS.sectionTitle}>Walk-In Medical History</div>
+                    {["B.P", "Temp", "Pulse", "Height", "Weight", "BSR", "BSF"].map(v => (
+                      <div key={v} style={PS.vitalRow}>
+                        <span style={PS.vitalLabel}>{v}</span>
+                        <span style={PS.vitalLine}>................................................................</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Right column — Rx */}
+              <div style={PS.rightCol}>
+                <div style={PS.rxSymbol}>R<sub style={{ fontSize:18 }}>x</sub></div>
+
+                {medicines.length > 0 ? (
+                  <div>
+                    <div style={PS.sectionTitle}>Prescribed Medicines</div>
+                    {medicines.map((m, i) => (
+                      <div key={i} style={PS.medItem}>
+                        <div style={PS.medName}>{i + 1}. {m.name}</div>
+                        <div style={PS.medDetail}>
+                          {m.dose && <span>Dose: {m.dose}</span>}
+                          {m.freq && <span> · Frequency: {m.freq}</span>}
+                          {m.days && <span> · Duration: {m.days} days</span>}
+                        </div>
+                      </div>
+                    ))}
+                    {rx?.instructions && (
+                      <div style={PS.rxNote}>
+                        <b>Instructions:</b> {rx.instructions}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    {[1,2,3,4,5].map(i => (
+                      <div key={i} style={PS.blankRxLine}>
+                        <span style={PS.blankNum}>{i}.</span>
+                        <span style={PS.blankLineInner}>.....................................................................</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={PS.divider} />
+
+            {/* Footer */}
+            <div style={PS.footer}>
+              <div style={PS.footerLeft}>
+                <span>Next Visit: ................................</span>
+              </div>
+              <div style={PS.footerRight}>
+                <div style={PS.sigBox}>
+                  <div style={PS.sigLine}>________________________________</div>
+                  <div style={PS.sigLabel}>{dr ? dr.name : "Doctor's Signature"}</div>
+                  {dr?.licenseNo && <div style={PS.sigSub}>{dr.licenseNo}</div>}
+                  <div style={PS.sigSub}>(Not Valid for Court)</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={PS.footerBar}>
+              <span>Powered by MediTrack · Patient Management System</span>
+              <span>Printed: {fmtDT(new Date().toISOString())}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Print Slip Styles ────────────────────────────────────────────────────────
+const PS = {
+  overlay: { position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:1000, display:"flex", alignItems:"flex-start", justifyContent:"center", overflowY:"auto", padding:"20px 16px 40px" },
+  modal: { background:"#1a2a32", borderRadius:16, padding:"20px", width:"100%", maxWidth:820, boxShadow:"0 30px 80px rgba(0,0,0,0.6)" },
+  slip: { background:"#fff", color:"#111", fontFamily:"'Times New Roman', Georgia, serif", padding:"28px 32px", minHeight:900, fontSize:13, lineHeight:1.5 },
+
+  header: { display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 },
+  headerLeft: {},
+  hospitalName: { fontSize:28, fontWeight:900, color:"#1a1a2e", letterSpacing:1, lineHeight:1.1 },
+  hospitalSub: { fontSize:12, color:"#555", letterSpacing:2, textTransform:"uppercase", marginTop:2 },
+  headerRight: { textAlign:"right" },
+  slipTitle: { fontSize:13, fontWeight:700, letterSpacing:2, textTransform:"uppercase", color:"#1a1a2e", border:"2px solid #1a1a2e", padding:"4px 12px", display:"inline-block", marginBottom:4 },
+  slipDate: { fontSize:12, color:"#333" },
+  slipId: { fontSize:11, color:"#666", fontFamily:"monospace", marginTop:2 },
+
+  divider: { borderTop:"2px solid #1a1a2e", margin:"10px 0" },
+
+  infoRow: { display:"flex", gap:0, marginBottom:0 },
+  infoBox: { flex:1, paddingRight:16 },
+  infoTitle: { fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:1.5, color:"#1a1a2e", borderBottom:"1px solid #ccc", paddingBottom:4, marginBottom:8 },
+  infoTable: { width:"100%", borderCollapse:"collapse" },
+  infoKey: { fontSize:12, color:"#555", fontWeight:600, paddingRight:8, paddingBottom:3, whiteSpace:"nowrap", verticalAlign:"top", width:"38%" },
+  infoVal: { fontSize:12, color:"#111", paddingBottom:3, verticalAlign:"top" },
+
+  bodyRow: { display:"flex", gap:0, minHeight:360 },
+  leftCol: { flex:"0 0 45%", paddingRight:20, borderRight:"1px solid #ddd" },
+  rightCol: { flex:"0 0 55%", paddingLeft:20 },
+
+  section: { marginBottom:16 },
+  sectionTitle: { fontSize:11, fontWeight:700, textTransform:"uppercase", letterSpacing:1.5, color:"#1a1a2e", borderBottom:"1px solid #ccc", paddingBottom:3, marginBottom:6 },
+  sectionBody: { fontSize:13, color:"#111", lineHeight:1.7, whiteSpace:"pre-wrap" },
+
+  vitalsBox: { marginBottom:12 },
+  vitalRow: { display:"flex", alignItems:"center", marginBottom:7 },
+  vitalLabel: { fontSize:12, color:"#333", minWidth:52 },
+  vitalLine: { fontSize:10, color:"#ccc", flex:1, overflow:"hidden", letterSpacing:1 },
+
+  rxSymbol: { fontSize:52, fontWeight:900, color:"#1a1a2e", lineHeight:1, marginBottom:12, fontFamily:"serif" },
+  medItem: { marginBottom:12, borderBottom:"1px dotted #ddd", paddingBottom:8 },
+  medName: { fontSize:14, fontWeight:700, color:"#1a1a2e" },
+  medDetail: { fontSize:12, color:"#444", marginTop:2 },
+  rxNote: { marginTop:12, fontSize:12, color:"#333", background:"#f5f5f5", padding:"8px 10px", borderRadius:4, borderLeft:"3px solid #1a1a2e" },
+
+  blankRxLine: { display:"flex", alignItems:"center", marginBottom:18 },
+  blankNum: { fontSize:13, fontWeight:700, color:"#333", marginRight:6 },
+  blankLineInner: { fontSize:10, color:"#ccc", letterSpacing:1 },
+
+  footer: { display:"flex", justifyContent:"space-between", alignItems:"flex-end", padding:"10px 0" },
+  footerLeft: { fontSize:12, color:"#333" },
+  footerRight: { textAlign:"right" },
+  sigBox: { textAlign:"center" },
+  sigLine: { fontSize:13, color:"#333", letterSpacing:2, marginBottom:4 },
+  sigLabel: { fontSize:13, fontWeight:700, color:"#1a1a2e" },
+  sigSub: { fontSize:11, color:"#666" },
+
+  footerBar: { background:"#1a1a2e", color:"#aaa", fontSize:10, padding:"8px 12px", display:"flex", justifyContent:"space-between", marginTop:10, letterSpacing:0.5 },
 };
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
@@ -81,12 +341,14 @@ export default function App() {
   const [view, setView] = useState("home");
   const [patient, setPat] = useState(null);
   const [toast, setToast] = useState(null);
+  const [printData, setPrintData] = useState(null);
 
   useEffect(() => { loadAll().then(d => { setDb(d); setLoad(false); }); }, []);
 
   const persist = async (u) => { setDb(u); await saveAll(u); };
   const notify = (msg, type = "ok") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3400); };
   const refresh = (id, udb) => { const s = udb || db; if (id && s[id]) setPat(s[id]); };
+  const openPrint = (data) => setPrintData(data);
 
   if (loading) return <Splash />;
 
@@ -96,13 +358,22 @@ export default function App() {
       <Bg />
       <Nav count={Object.keys(db).length} onHome={() => { setView("home"); setPat(null); }} />
       {toast && <Toast {...toast} />}
+      {printData && (
+        <PrintSlip
+          p={printData.p}
+          rx={printData.rx}
+          dr={printData.dr}
+          hxEntry={printData.hxEntry}
+          onClose={() => setPrintData(null)}
+        />
+      )}
       <main style={R.main}>
         {view === "home" && <Home setView={setView} />}
         {view === "register" && <Register db={db} persist={persist} setView={setView} setPat={setPat} notify={notify} />}
         {view === "lookup" && <Lookup db={db} persist={persist} setView={setView} setPat={setPat} notify={notify} />}
         {view === "card" && patient && <IDCard p={patient} setView={setView} />}
         {view === "dashboard" && patient && (
-          <Dashboard p={patient} db={db} persist={persist} notify={notify} refresh={refresh} setView={setView} />
+          <Dashboard p={patient} db={db} persist={persist} notify={notify} refresh={refresh} setView={setView} openPrint={openPrint} />
         )}
       </main>
     </div>
@@ -130,7 +401,7 @@ function Home({ setView }) {
         ))}
       </div>
       <div style={R.pills}>
-        {["💊 Prescriptions", "📅 Appointments", "🔬 Lab Reports", "📋 Clinical History", "👨‍⚕️ Attending Doctors", "📱 SMS"].map(p => (
+        {["💊 Prescriptions", "📅 Appointments", "🔬 Lab Reports", "📋 Clinical History", "👨‍⚕️ Attending Doctors", "📱 SMS", "🖨 Print Slips"].map(p => (
           <span key={p} style={R.pill}>{p}</span>
         ))}
       </div>
@@ -227,7 +498,7 @@ function IDCard({ p, setView }) {
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
-function Dashboard({ p: initP, db, persist, notify, refresh, setView }) {
+function Dashboard({ p: initP, db, persist, notify, refresh, setView, openPrint }) {
   const [tab, setTab] = useState("overview");
   const p = db[initP.id] || initP;
 
@@ -253,6 +524,10 @@ function Dashboard({ p: initP, db, persist, notify, refresh, setView }) {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <span style={R.visitBadge}>Visit #{p.visits || 1}</span>
           <button style={R.smBtn} className="btn" onClick={() => setView("card")}>🪪 ID</button>
+          <button style={{ ...R.smBtn, borderColor:"rgba(201,168,126,0.3)", color:"#c9a87e" }} className="btn"
+            onClick={() => openPrint({ p, rx: p.prescriptions?.slice(-1)[0], dr: p.doctors?.[0], hxEntry: p.clinicalHistory?.slice(-1)[0] })}>
+            🖨 Print
+          </button>
         </div>
       </div>
 
@@ -265,10 +540,10 @@ function Dashboard({ p: initP, db, persist, notify, refresh, setView }) {
       </div>
 
       <div>
-        {tab === "overview" && <OverviewTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} />}
-        {tab === "history" && <HistoryTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} />}
-        {tab === "doctors" && <DoctorsTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} />}
-        {tab === "rx" && <RxTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} />}
+        {tab === "overview" && <OverviewTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} openPrint={openPrint} />}
+        {tab === "history" && <HistoryTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} openPrint={openPrint} />}
+        {tab === "doctors" && <DoctorsTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} openPrint={openPrint} />}
+        {tab === "rx" && <RxTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} openPrint={openPrint} />}
         {tab === "appt" && <ApptTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} />}
         {tab === "lab" && <LabTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} />}
         {tab === "sms" && <SMSTab p={p} db={db} persist={persist} notify={notify} refresh={refresh} />}
@@ -278,7 +553,7 @@ function Dashboard({ p: initP, db, persist, notify, refresh, setView }) {
 }
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
-function OverviewTab({ p, db, persist, notify, refresh }) {
+function OverviewTab({ p, db, persist, notify, refresh, openPrint }) {
   const [edit, setEdit] = useState(false);
   const [f, setF] = useState({ ...p });
   const save = async () => {
@@ -286,6 +561,7 @@ function OverviewTab({ p, db, persist, notify, refresh }) {
   };
   const nextApt = (p.appointments || []).filter(a => new Date(a.date) >= new Date() && a.status !== "Cancelled").sort((a, b) => new Date(a.date) - new Date(b.date))[0];
   const latestRx = (p.prescriptions || []).slice(-1)[0];
+  const latestHx = (p.clinicalHistory || []).slice(-1)[0];
   return (
     <div>
       <div style={R.statsRow}>
@@ -304,6 +580,19 @@ function OverviewTab({ p, db, persist, notify, refresh }) {
       </div>
       {latestRx && <AlertBox c="#7e9cc9" icon="💊" title="Latest Prescription" body={`${latestRx.medicines?.map(m => m.name).join(", ")} — ${fmt(latestRx.date)}`} />}
       {nextApt && <AlertBox c="#5a9e8f" icon="📅" title="Next Appointment" body={`${fmt(nextApt.date)} at ${nextApt.time} — ${nextApt.type}${nextApt.doctor ? " (" + nextApt.doctor + ")" : ""}`} />}
+
+      {/* Quick print button */}
+      <div style={{ marginBottom:16, display:"flex", gap:10, flexWrap:"wrap" }}>
+        <button style={{ ...R.qBtn, borderColor:"rgba(201,168,126,0.3)", color:"#c9a87e" }} className="btn"
+          onClick={() => openPrint({ p, rx: latestRx, dr: p.doctors?.[0], hxEntry: latestHx })}>
+          🖨 Print Latest Prescription Slip
+        </button>
+        <button style={{ ...R.qBtn }} className="btn"
+          onClick={() => openPrint({ p, rx: null, dr: p.doctors?.[0], hxEntry: latestHx })}>
+          🖨 Print Clinical Summary
+        </button>
+      </div>
+
       <Card title="Patient Information" action={<button style={R.editBtn} className="btn" onClick={() => setEdit(!edit)}>{edit ? "Cancel" : "✏ Edit"}</button>}>
         {edit ? (
           <div>
@@ -333,7 +622,7 @@ function OverviewTab({ p, db, persist, notify, refresh }) {
 }
 
 // ─── Clinical History Tab ─────────────────────────────────────────────────────
-function HistoryTab({ p, db, persist, notify, refresh }) {
+function HistoryTab({ p, db, persist, notify, refresh, openPrint }) {
   const [open, setOpen] = useState(false);
   const [exp, setExp] = useState(null);
   const [f, setF] = useState({ date: today(), complaints: "", examination: "", diagnosis: "", plan: "", doctor: "", followUp: "" });
@@ -375,7 +664,13 @@ function HistoryTab({ p, db, persist, notify, refresh }) {
               <div style={R.hxDiag}>{h.diagnosis}</div>
               <div style={R.hxCompl}>{h.complaints.slice(0, 90)}{h.complaints.length > 90 ? "…" : ""}</div>
             </div>
-            <div style={{ color: "#5a6a72", fontSize: 16 }}>{exp === h.id ? "▲" : "▼"}</div>
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              <button style={{ ...R.sendBtn, borderColor:"rgba(201,168,126,0.3)", color:"#c9a87e" }} className="btn"
+                onClick={e => { e.stopPropagation(); openPrint({ p, rx: null, dr: p.doctors?.find(d => d.name === h.doctor), hxEntry: h }); }}>
+                🖨
+              </button>
+              <div style={{ color: "#5a6a72", fontSize: 16 }}>{exp === h.id ? "▲" : "▼"}</div>
+            </div>
           </div>
           {exp === h.id && (
             <div style={R.hxBody}>
@@ -392,7 +687,7 @@ function HistoryTab({ p, db, persist, notify, refresh }) {
 }
 
 // ─── Attending Doctors Tab ────────────────────────────────────────────────────
-function DoctorsTab({ p, db, persist, notify, refresh }) {
+function DoctorsTab({ p, db, persist, notify, refresh, openPrint }) {
   const [open, setOpen] = useState(false);
   const [selDr, setSelDr] = useState(null);
   const [drTab, setDrTab] = useState("rx");
@@ -413,7 +708,7 @@ function DoctorsTab({ p, db, persist, notify, refresh }) {
 
   if (selDr && currentDr) {
     return <DoctorDetail p={p} dr={currentDr} db={db} persist={persist} notify={notify} refresh={refresh}
-      drTab={drTab} setDrTab={setDrTab} onBack={() => setSelDr(null)} />;
+      drTab={drTab} setDrTab={setDrTab} onBack={() => setSelDr(null)} openPrint={openPrint} />;
   }
 
   return (
@@ -472,7 +767,7 @@ function DoctorsTab({ p, db, persist, notify, refresh }) {
 }
 
 // ─── Doctor Detail ────────────────────────────────────────────────────────────
-function DoctorDetail({ p, dr, db, persist, notify, refresh, drTab, setDrTab, onBack }) {
+function DoctorDetail({ p, dr, db, persist, notify, refresh, drTab, setDrTab, onBack, openPrint }) {
   const drTabs = [
     { id: "rx", label: "Prescriptions", icon: "💊" },
     { id: "appt", label: "Appointments", icon: "📅" },
@@ -495,6 +790,14 @@ function DoctorDetail({ p, dr, db, persist, notify, refresh, drTab, setDrTab, on
           </div>
           {dr.notes && <div style={{ fontSize: 11, color: "#3a4a52", marginTop: 4, fontStyle: "italic" }}>{dr.notes}</div>}
         </div>
+        <button style={{ ...R.smBtn, borderColor:"rgba(201,168,126,0.3)", color:"#c9a87e" }} className="btn"
+          onClick={() => {
+            const latestRx = dr.prescriptions?.slice(-1)[0];
+            const latestHx = p.clinicalHistory?.slice(-1)[0];
+            openPrint({ p, rx: latestRx, dr, hxEntry: latestHx });
+          }}>
+          🖨 Print Slip
+        </button>
       </div>
       <div style={{ ...R.tabBar, marginBottom: 16 }}>
         {drTabs.map(t => (
@@ -503,7 +806,7 @@ function DoctorDetail({ p, dr, db, persist, notify, refresh, drTab, setDrTab, on
           </button>
         ))}
       </div>
-      {drTab === "rx" && <DrRxTab p={p} dr={dr} db={db} persist={persist} notify={notify} refresh={refresh} />}
+      {drTab === "rx" && <DrRxTab p={p} dr={dr} db={db} persist={persist} notify={notify} refresh={refresh} openPrint={openPrint} />}
       {drTab === "appt" && <DrApptTab p={p} dr={dr} db={db} persist={persist} notify={notify} refresh={refresh} />}
       {drTab === "notes" && <DrNotesTab p={p} dr={dr} db={db} persist={persist} notify={notify} refresh={refresh} />}
     </div>
@@ -511,7 +814,7 @@ function DoctorDetail({ p, dr, db, persist, notify, refresh, drTab, setDrTab, on
 }
 
 // ─── Doctor Rx ────────────────────────────────────────────────────────────────
-function DrRxTab({ p, dr, db, persist, notify, refresh }) {
+function DrRxTab({ p, dr, db, persist, notify, refresh, openPrint }) {
   const [open, setOpen] = useState(false);
   const [rx, setRx] = useState({ diagnosis: "", medicines: [{ name: "", dose: "", freq: "", days: "" }], instructions: "", date: today() });
 
@@ -532,7 +835,8 @@ function DrRxTab({ p, dr, db, persist, notify, refresh }) {
     const msg = `[MediTrack] Prescription ${r.id}\nBy: ${dr.name} (${dr.specialty})\nDiagnosis: ${r.diagnosis}\nMedicines: ${r.medicines.map(m => `${m.name} ${m.dose} x${m.freq} for ${m.days} days`).join("; ")}\n${r.instructions ? "Instructions: " + r.instructions : ""}`;
     const s = await mkSMS(p.phone, msg);
     const up = { ...db[p.id], smsLog: [...(db[p.id].smsLog || []), s] };
-    const u = { ...db, [p.id]: up }; await persist(u); refresh(p.id, u); notify(`📱 Sent to ${p.phone}`);
+    const u = { ...db, [p.id]: up }; await persist(u); refresh(p.id, u);
+    notify(s.status?.startsWith("sent") ? `📱 Sent to ${p.phone}` : `❌ SMS failed: ${s.error || "unknown"}`, s.status?.startsWith("sent") ? "ok" : "err");
   };
 
   const list = (db[p.id]?.doctors || []).find(d => d.id === dr.id)?.prescriptions?.slice().reverse() || [];
@@ -570,7 +874,13 @@ function DrRxTab({ p, dr, db, persist, notify, refresh }) {
         <div key={r.id} style={R.rxCard}>
           <div style={R.rxTop}>
             <div><div style={R.rxId}>{r.id}</div><div style={R.rxDate}>{fmt(r.date)}</div></div>
-            <button style={R.sendBtn} className="btn" onClick={() => send(r)}>📱 Send</button>
+            <div style={{ display:"flex", gap:8 }}>
+              <button style={{ ...R.sendBtn, borderColor:"rgba(201,168,126,0.3)", color:"#c9a87e" }} className="btn"
+                onClick={() => openPrint({ p, rx: r, dr, hxEntry: p.clinicalHistory?.slice(-1)[0] })}>
+                🖨 Print
+              </button>
+              <button style={R.sendBtn} className="btn" onClick={() => send(r)}>📱 Send</button>
+            </div>
           </div>
           <div style={R.rxDiag}>Diagnosis: <b>{r.diagnosis}</b></div>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -687,13 +997,14 @@ function DrNotesTab({ p, dr, db, persist, notify, refresh }) {
 }
 
 // ─── Global Prescriptions ─────────────────────────────────────────────────────
-function RxTab({ p, db, persist, notify, refresh }) {
+function RxTab({ p, db, persist, notify, refresh, openPrint }) {
   const list = (db[p.id]?.prescriptions || []).slice().reverse();
   const send = async (r) => {
     const msg = `[MediTrack] Prescription ${r.id}\n${r.doctorName ? `By: ${r.doctorName}\n` : ""}Diagnosis: ${r.diagnosis}\nMedicines: ${r.medicines.map(m => `${m.name} ${m.dose} x${m.freq} for ${m.days} days`).join("; ")}\n${r.instructions ? "Instructions: " + r.instructions : ""}`;
     const s = await mkSMS(p.phone, msg);
     const up = { ...db[p.id], smsLog: [...(db[p.id].smsLog || []), s] };
-    const u = { ...db, [p.id]: up }; await persist(u); refresh(p.id, u); notify(`📱 Sent to ${p.phone}`);
+    const u = { ...db, [p.id]: up }; await persist(u); refresh(p.id, u);
+    notify(s.status?.startsWith("sent") ? `📱 Sent to ${p.phone}` : `❌ SMS failed: ${s.error || "unknown"}`, s.status?.startsWith("sent") ? "ok" : "err");
   };
   return (
     <div>
@@ -703,7 +1014,13 @@ function RxTab({ p, db, persist, notify, refresh }) {
         <div key={r.id} style={R.rxCard}>
           <div style={R.rxTop}>
             <div><div style={R.rxId}>{r.id}</div><div style={R.rxDate}>{fmt(r.date)}{r.doctorName ? ` · ${r.doctorName}` : ""}</div></div>
-            <button style={R.sendBtn} className="btn" onClick={() => send(r)}>📱 Send</button>
+            <div style={{ display:"flex", gap:8 }}>
+              <button style={{ ...R.sendBtn, borderColor:"rgba(201,168,126,0.3)", color:"#c9a87e" }} className="btn"
+                onClick={() => openPrint({ p, rx: r, dr: p.doctors?.find(d => d.name === r.doctorName), hxEntry: p.clinicalHistory?.slice(-1)[0] })}>
+                🖨 Print
+              </button>
+              <button style={R.sendBtn} className="btn" onClick={() => send(r)}>📱 Send</button>
+            </div>
           </div>
           <div style={R.rxDiag}>Diagnosis: <b>{r.diagnosis}</b></div>
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
@@ -843,7 +1160,8 @@ function SMSTab({ p, db, persist, notify, refresh }) {
   const send = async (text) => {
     const s = await mkSMS(p.phone, `[MediTrack] ${text}`);
     const up = { ...db[p.id], smsLog: [...(db[p.id].smsLog || []), s] };
-    const u = { ...db, [p.id]: up }; await persist(u); refresh(p.id, u); notify(`📱 Sent to ${p.phone}`);
+    const u = { ...db, [p.id]: up }; await persist(u); refresh(p.id, u);
+    notify(s.status?.startsWith("sent") ? `📱 Sent to ${p.phone}` : `❌ SMS failed: ${s.error || "unknown"}`, s.status?.startsWith("sent") ? "ok" : "err");
   };
 
   const medReminder = () => {
@@ -879,10 +1197,11 @@ function SMSTab({ p, db, persist, notify, refresh }) {
       {list.map(s => (
         <div key={s.id} style={R.smsCard}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, flexWrap: "wrap", gap: 4 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#5a9e8f" }}>📱 {s.to}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: s.status?.startsWith("sent") ? "#5a9e8f" : "#e07b7b" }}>📱 {s.to}</span>
             <span style={{ fontSize: 11, color: "#3a4a52", fontFamily: "monospace" }}>{fmtDT(s.sentAt)}</span>
           </div>
           <div style={{ fontSize: 12, color: "#8fa3b0", whiteSpace: "pre-wrap", lineHeight: 1.65 }}>{s.message}</div>
+          <div style={{ fontSize: 11, color: s.status?.startsWith("sent") ? "#5a9e8f" : "#e07b7b", marginTop:4 }}>Status: {s.status}</div>
         </div>
       ))}
     </div>
