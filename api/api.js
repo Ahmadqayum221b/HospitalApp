@@ -2,6 +2,8 @@
 import https from "https";
 
 export default async function handler(req, res) {
+  console.log("BASE_URL value:", JSON.stringify(process.env.INFOBIP_BASE_URL));
+  console.log("API_KEY exists:", !!process.env.INFOBIP_API_KEY);
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
